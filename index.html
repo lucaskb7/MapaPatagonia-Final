@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foco Patagonia — Incendios Forestales</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --fire:#E8430A; --ember:#FF8C42; --smoke:#8B8B8B;
+    --ash:#C8BEB2; --deep:#0D1B0A; --cream:#F5EFE6;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--deep);color:var(--cream);font-family:'Source Sans 3',sans-serif;overflow:hidden;height:100vh;}
+
+  /* HEADER */
+  .header{
+    position:fixed;top:0;left:0;right:0;z-index:100;
+    padding:16px 28px;
+    background:linear-gradient(180deg,rgba(13,27,10,.98) 0%,rgba(13,27,10,0) 100%);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .logo{display:flex;align-items:center;gap:14px;}
+  .logo-icon{font-size:30px;animation:flicker 2.5s ease-in-out infinite;}
+  @keyframes flicker{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.8;transform:scale(1.05)}}
+  .logo-text h1{font-family:'Playfair Display',serif;font-size:22px;font-weight:900;color:var(--ember);letter-spacing:1px;line-height:1.1;}
+  .logo-text p{font-size:12px;color:var(--ash);letter-spacing:2px;text-transform:uppercase;font-weight:300;}
+  .nav-filters{display:flex;gap:8px;flex-wrap:wrap;}
+  .filter-btn{
+    padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,.15);
+    background:rgba(255,255,255,.05);color:var(--ash);font-size:13px;
+    letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .2s;
+    font-family:'Source Sans 3',sans-serif;font-weight:600;
+  }
+  .filter-btn:hover,.filter-btn.active{background:var(--fire);border-color:var(--fire);color:#fff;}
+
+  /* MAP CONTAINER */
+  .map-wrapper{
+    width:100vw;height:100vh;position:relative;overflow:hidden;
+    background:radial-gradient(ellipse at 38% 52%,#152510 0%,#0d1b0a 45%,#060e06 100%);
+  }
+
+  /* El SVG ahora se adapta dinámicamente y tiene transition para el zoom con botones */
+  #map-svg-container{
+    position:absolute;
+    top:0;left:0;
+    cursor:grab;
+    user-select:none;
+    transform-origin: center center;
+    transition: transform 0.05s linear; /* Suaviza el zoom sutilmente */
+  }
+  #map-svg-container:active{cursor:grabbing;}
+
+  #main-svg {
+    height: 82vh; 
+    width: auto;
+    max-height: 1100px; 
+    display: block;
+  }
+
+  /* ZOOM CONTROLS */
+  .zoom-controls {
+    position: fixed; right: 28px; bottom: 90px; z-index: 100;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .zoom-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(13,27,10,.88); border: 1px solid rgba(232,67,10,.3);
+    color: var(--ember); font-size: 24px; cursor: pointer; backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; transition: all .2s;
+    font-family: 'Source Sans 3', sans-serif;
+  }
+  .zoom-btn:hover { background: var(--fire); color: #fff; box-shadow: 0 0 12px rgba(232,67,10,.4); }
+
+  /* PULSE ANIMATION */
+  .pulse-ring{
+    animation:pulse-anim 2s ease-out infinite;
+    transform-origin:center;
+    transform-box:fill-box;
+  }
+  @keyframes pulse-anim{
+    0%{opacity:.5;transform:scale(.7);}
+    100%{opacity:0;transform:scale(2.2);}
+  }
+  .marker-dot{cursor:pointer;transition:transform .2s;transform-box:fill-box;transform-origin:center;}
+  .marker-dot:hover{transform:scale(1.3);}
+
+  /* TIMELINE */
+  .timeline{
+    position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+    z-index:100;display:flex;align-items:center;gap:4px;
+    background:rgba(13,27,10,.93);border:1px solid rgba(232,67,10,.22);
+    border-radius:40px;padding:8px 20px;backdrop-filter:blur(12px);
+  }
+  .timeline-label{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--smoke);margin-right:16px;white-space:nowrap;font-weight:600;}
+  .year-btn{
+    padding:6px 14px;border-radius:20px;border:none;background:transparent;
+    color:var(--ash);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;
+    font-family:'Source Sans 3',sans-serif;
+  }
+  .year-btn:hover{color:var(--ember);}
+  .year-btn.active{background:var(--fire);color:#fff;box-shadow:0 0 10px rgba(232,67,10,.4);}
+
+  /* MODAL */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(5,13,5,.88);
+    z-index:200;display:none;align-items:center;justify-content:center;
+    backdrop-filter:blur(4px);padding:16px;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    background:linear-gradient(145deg,#121f10,#0d1b0a);
+    border:1px solid rgba(232,67,10,.28);border-radius:16px;
+    width:100%;max-width:580px;max-height:88vh;overflow-y:auto;
+    position:relative;animation:slideUp .3s ease;
+  }
+  @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+  .modal-header{padding:26px 26px 0;position:relative;}
+  .modal-year{font-size:13px;letter-spacing:3px;text-transform:uppercase;color:var(--ember);margin-bottom:7px;font-weight:600;}
+  .modal-title{font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:var(--cream);line-height:1.2;margin-bottom:5px;}
+  .modal-province{font-size:14px;color:var(--ash);letter-spacing:1px;}
+  .modal-close{
+    position:absolute;top:18px;right:18px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    color:var(--ash);width:34px;height:34px;border-radius:50%;
+    cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .2s;
+  }
+  .modal-close:hover{background:var(--fire);border-color:var(--fire);color:#fff;}
+  .modal-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:rgba(255,255,255,.06);margin:18px 0 0;}
+  .stat{background:rgba(13,27,10,.9);padding:16px;text-align:center;}
+  .stat-number{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--ember);display:block;}
+  .stat-label{font-size:11px;color:var(--smoke);letter-spacing:1px;text-transform:uppercase;margin-top:4px;}
+  .modal-body{padding:24px 28px 28px;}
+  .modal-section{margin-bottom:20px;}
+  .modal-section-title{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--ember);margin-bottom:10px;font-weight:600;}
+  .modal-text{font-size:15px;line-height:1.75;color:var(--ash);font-weight:300;}
+  .testimony{
+    background:rgba(232,67,10,.07);border-left:3px solid var(--fire);
+    padding:16px 18px;border-radius:0 8px 8px 0;
+    font-style:italic;font-size:14px;color:var(--cream);line-height:1.6;margin-top:10px;
+  }
+  .testimony cite{display:block;font-style:normal;font-size:12px;color:var(--ember);margin-top:8px;letter-spacing:.5px;font-weight:600;}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+  .tag{padding:4px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);font-size:11px;letter-spacing:.5px;color:var(--smoke);}
+
+  /* LEGEND */
+  .legend{position:fixed;right:28px;top:50%;transform:translateY(-50%);z-index:100;display:flex;flex-direction:column;gap:10px;}
+  .legend-item{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--smoke);letter-spacing:.5px;}
+  .legend-dot{width:14px;height:14px;border-radius:50%;background:var(--fire);box-shadow:0 0 6px var(--fire);flex-shrink:0;}
+  .legend-dot.medium{width:11px;height:11px;}
+  .legend-dot.small{width:8px;height:8px;background:var(--ember);box-shadow:0 0 4px var(--ember);}
+
+  /* COUNTER */
+  .counter{
+    position:fixed;left:28px;bottom:90px;z-index:100;
+    background:rgba(13,27,10,.88);border:1px solid rgba(232,67,10,.18);
+    border-radius:14px;padding:16px 20px;backdrop-filter:blur(8px);
+  }
+  .counter-title{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--smoke);margin-bottom:8px;}
+  .counter-number{font-family:'Playfair Display',serif;font-size:34px;font-weight:700;color:var(--fire);line-height:1;}
+  .counter-sub{font-size:11px;color:var(--ash);margin-top:4px;max-width:200px;line-height:1.4;}
+
+  /* SOURCE BADGE */
+  .source-badge{
+    position:fixed;left:28px;top:90px;z-index:100;
+    background:rgba(13,27,10,.85);border:1px solid rgba(232,67,10,.15);
+    border-radius:12px;padding:12px 16px;backdrop-filter:blur(8px);max-width:240px;
+  }
+  .source-badge strong{color:var(--ash);display:block;margin-bottom:4px;font-size:11px;letter-spacing:1px;text-transform:uppercase;}
+  .source-badge p{font-size:11px;color:var(--smoke);line-height:1.5;}
+
+  /* TOOLTIP */
+  .tooltip{
+    position:fixed;background:rgba(13,27,10,.96);border:1px solid rgba(232,67,10,.32);
+    border-radius:8px;padding:10px 14px;font-size:14px;color:var(--cream);
+    pointer-events:none;z-index:150;display:none;backdrop-filter:blur(8px);max-width:260px;
+  }
+  .tooltip.show{display:block;}
+  .tooltip strong{color:var(--ember);font-size:15px;display:block;margin-bottom:4px;}
+
+  /* SMOKE */
+  .smoke-particle{position:absolute;border-radius:50%;background:rgba(139,139,139,.04);animation:drift linear infinite;pointer-events:none;}
+  @keyframes drift{0%{transform:translateY(0) translateX(0) scale(1);opacity:0}20%{opacity:.6}100%{transform:translateY(-200px) translateX(30px) scale(2.5);opacity:0}}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🔥</div>
+    <div class="logo-text">
+      <h1>Foco Patagonia</h1>
+      <p>Incendios Forestales · Patagonia Argentina · 2015–2026</p>
+    </div>
+  </div>
+  <div class="nav-filters">
+    <button class="filter-btn active" data-val="todos" onclick="toggleFilter('prov', 'todos', this)">Todos</button>
+    <button class="filter-btn" data-val="neuquen" onclick="toggleFilter('prov', 'neuquen', this)">Neuquén</button>
+    <button class="filter-btn" data-val="rionegro" onclick="toggleFilter('prov', 'rionegro', this)">Río Negro</button>
+    <button class="filter-btn" data-val="chubut" onclick="toggleFilter('prov', 'chubut', this)">Chubut</button>
+    <button class="filter-btn" data-val="santacruz" onclick="toggleFilter('prov', 'santacruz', this)">Santa Cruz</button>
+    <button class="filter-btn" data-val="comunidades" onclick="toggleFilter('prov', 'comunidades', this)">Comunidades</button>
+  </div>
+</div>
+
+<!-- SOURCE BADGE -->
+<div class="source-badge">
+  <strong>Fuentes verificadas</strong>
+  <p>WWA (2026) · Greenpeace Arg. · Altamira/UNLP (2024) · APN · SNMF</p>
+</div>
+
+<!-- MAP WRAPPER -->
+<div class="map-wrapper" id="map-wrapper">
+  <div id="map-svg-container">
+    <svg id="main-svg" viewBox="0 0 750 1150" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="andesG" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#1e4012" stop-opacity=".9"/>
+          <stop offset="100%" stop-color="#0d1b0a" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="atlG" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#0d1b0a" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#081420" stop-opacity=".7"/>
+        </linearGradient>
+        <filter id="provglow">
+          <feGaussianBlur stdDeviation="1" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <!-- Ocean atmospheres -->
+      <rect x="0" y="0" width="100" height="1150" fill="url(#andesG)"/>
+      <rect x="600" y="0" width="150" height="1150" fill="url(#atlG)"/>
+
+      <!-- TRAZADO GEOGRÁFICO REALISTA -->
+      <g stroke-width="1.5" opacity=".92">
+        <!-- NEUQUÉN -->
+        <path d="M 207,62 C 240,70 300,85 365,95 C 365,130 360,150 365,172 C 345,185 325,195 314,205 C 290,225 275,235 263,249 C 235,265 210,275 187,288 L 182,233 L 212,122 Z" fill="#1c3212" stroke="#305a1a"/>
+        <!-- RÍO NEGRO -->
+        <path d="M 365,172 C 430,175 480,175 518,177 C 580,180 620,185 670,188 C 650,230 630,260 619,288 C 580,285 540,280 518,277 C 518,300 518,320 518,343 L 171,343 L 187,288 C 210,275 235,265 263,249 C 275,235 290,225 314,205 C 325,195 345,185 365,172 Z" fill="#162a10" stroke="#28501a"/>
+        <!-- CHUBUT -->
+        <path d="M 171,343 L 518,343 C 540,335 570,335 589,343 C 605,355 595,375 589,387 C 560,395 535,390 518,387 C 510,410 505,430 502,453 C 490,480 480,500 477,508 C 450,530 420,550 390,563 L 171,563 L 176,500 L 182,453 L 171,343 Z" fill="#0f200e" stroke="#224a12"/>
+        <!-- SANTA CRUZ -->
+        <path d="M 171,563 L 390,563 C 430,590 460,610 477,629 C 475,650 473,660 472,673 C 440,705 400,730 380,745 C 365,765 355,775 345,789 C 330,830 320,850 314,872 C 330,890 340,900 350,911 L 289,911 L 289,883 L 151,883 C 130,850 120,830 110,811 L 110,728 C 135,670 145,640 161,618 L 171,563 Z" fill="#0b180b" stroke="#1c3e10"/>
+        <!-- TIERRA DEL FUEGO -->
+        <path d="M 334,927 L 365,927 C 420,980 470,1020 507,1048 L 334,1054 Z" fill="#090f09" stroke="#163010"/>
+      </g>
+
+      <!-- ETIQUETAS DE LAS PROVINCIAS AUMENTADAS -->
+      <text x="250" y="145" text-anchor="middle" font-size="22" fill="#5a9030" font-family="'Source Sans 3',sans-serif" letter-spacing="3" font-weight="700" opacity=".88">NEUQUÉN</text>
+      <text x="320" y="275" text-anchor="middle" font-size="20" fill="#4a8028" font-family="'Source Sans 3',sans-serif" letter-spacing="2.5" font-weight="700" opacity=".88">RÍO NEGRO</text>
+      <text x="280" y="470" text-anchor="middle" font-size="21" fill="#408025" font-family="'Source Sans 3',sans-serif" letter-spacing="3" font-weight="700" opacity=".88">CHUBUT</text>
+      <text x="285" y="740" text-anchor="middle" font-size="20" fill="#367020" font-family="'Source Sans 3',sans-serif" letter-spacing="2.5" font-weight="700" opacity=".82">SANTA CRUZ</text>
+      <text x="275" y="940" text-anchor="middle" font-size="14" fill="#1e4060" font-family="'Source Sans 3',sans-serif" letter-spacing="1" opacity=".65" font-style="italic">Estrecho de Magallanes</text>
+      <text x="400" y="1005" text-anchor="middle" font-size="15" fill="#2a5a18" font-family="'Source Sans 3',sans-serif" letter-spacing="1" font-weight="600" opacity=".75">T. DEL FUEGO</text>
+
+      <text x="65" y="520" text-anchor="middle" font-size="14" fill="#3a6022" font-family="'Source Sans 3',sans-serif" letter-spacing="1.5" transform="rotate(-90,65,520)" opacity=".45">CORDILLERA DE LOS ANDES</text>
+      <text x="655" y="520" text-anchor="middle" font-size="14" fill="#1a3a50" font-family="'Source Sans 3',sans-serif" letter-spacing="1.5" transform="rotate(90,655,520)" opacity=".4" font-style="italic">OCÉANO ATLÁNTICO</text>
+
+      <!-- LÍMITES PROVINCIALES INTERNOS -->
+      <path d="M 171,343 L 518,343" stroke="#1c3a10" stroke-width="1.5" stroke-dasharray="6,6" fill="none" opacity=".4"/>
+      <path d="M 171,563 L 390,563" stroke="#1c3a10" stroke-width="1.5" stroke-dasharray="6,6" fill="none" opacity=".4"/>
+      <path d="M 187,288 C 210,275 235,265 263,249 C 275,235 290,225 314,205 C 325,195 345,185 365,172" stroke="#1c3a10" stroke-width="1.5" stroke-dasharray="6,6" fill="none" opacity=".4"/>
+
+      <!-- PARALELOS MATEMÁTICOS DE REFERENCIA -->
+      <line x1="62" y1="122" x2="490" y2="116" stroke="#1a3010" stroke-width=".6" stroke-dasharray="2,10" opacity=".24"/>
+      <text x="496" y="121" font-size="12" fill="#2e5018" font-family="sans-serif" opacity=".38">38°S</text>
+      
+      <line x1="62" y1="233" x2="482" y2="228" stroke="#1a3010" stroke-width=".6" stroke-dasharray="2,10" opacity=".24"/>
+      <text x="488" y="233" font-size="12" fill="#2e5018" font-family="sans-serif" opacity=".38">40°S</text>
+      
+      <line x1="62" y1="344" x2="485" y2="342" stroke="#1a3010" stroke-width=".6" stroke-dasharray="2,10" opacity=".24"/>
+      <text x="491" y="347" font-size="12" fill="#2e5018" font-family="sans-serif" opacity=".38">42°S</text>
+      
+      <line x1="61" y1="454" x2="472" y2="452" stroke="#1a3010" stroke-width=".6" stroke-dasharray="2,10" opacity=".24"/>
+      <text x="478" y="457" font-size="12" fill="#2e5018" font-family="sans-serif" opacity=".38">44°S</text>
+      
+      <line x1="61" y1="564" x2="468" y2="562" stroke="#1a3010" stroke-width=".6" stroke-dasharray="2,10" opacity=".24"/>
+      <text x="474" y="567" font-size="12" fill="#2e5018" font-family="sans-serif" opacity=".38">46°S</text>
+      
+      <line x1="70" y1="785" x2="466" y2="785" stroke="#1a3010" stroke-width=".6" stroke-dasharray="2,10" opacity=".24"/>
+      <text x="472" y="790" font-size="12" fill="#2e5018" font-family="sans-serif" opacity=".38">50°S</text>
+
+      <line x1="213" y1="38" x2="155" y2="690" stroke="#1a3010" stroke-width=".5" stroke-dasharray="2,12" opacity=".18"/>
+      <text x="210" y="32" text-anchor="middle" font-size="11" fill="#2e5018" font-family="sans-serif" opacity=".32">71°O</text>
+      <line x1="417" y1="38" x2="417" y2="700" stroke="#1a3010" stroke-width=".5" stroke-dasharray="2,12" opacity=".15"/>
+      <text x="414" y="32" text-anchor="middle" font-size="11" fill="#2e5018" font-family="sans-serif" opacity=".28">67°O</text>
+
+      <!-- ROSA DE LOS VIENTOS AUMENTADA -->
+      <g transform="translate(670,75)">
+        <circle cx="0" cy="0" r="34" fill="rgba(10,22,8,.9)" stroke="rgba(232,67,10,.28)" stroke-width="1.3"/>
+        <circle cx="0" cy="0" r="4.5" fill="rgba(232,67,10,.75)"/>
+        <text x="0" y="-15" text-anchor="middle" font-size="16" fill="#C8BEB2" font-family="sans-serif" font-weight="700">N</text>
+        <text x="0"  y="24" text-anchor="middle" font-size="13" fill="#6B6B6B" font-family="sans-serif">S</text>
+        <text x="22" y="5"  text-anchor="middle" font-size="13" fill="#6B6B6B" font-family="sans-serif">E</text>
+        <text x="-22" y="5" text-anchor="middle" font-size="13" fill="#6B6B6B" font-family="sans-serif">O</text>
+        <path d="M0,-28 L5,-9 L0,1 L-5,-9 Z" fill="#E8430A" opacity=".95"/>
+        <path d="M0,8 L5,26 L0,18 L-5,26 Z" fill="#4a7a30" opacity=".7"/>
+      </g>
+
+      <!-- ESCALA AUMENTADA -->
+      <g transform="translate(520,1080)">
+        <rect x="0"  y="-8" width="60" height="8" fill="#3a6022" opacity=".7"/>
+        <rect x="60" y="-8" width="60" height="8" fill="#1a3010" opacity=".7"/>
+        <line x1="0"   y1="-14" x2="0"   y2="0" stroke="#3a6022" stroke-width="1.5" opacity=".7"/>
+        <line x1="120" y1="-14" x2="120" y2="0" stroke="#3a6022" stroke-width="1.5" opacity=".7"/>
+        <text x="60" y="-20" text-anchor="middle" font-size="13" fill="#4a7a30" font-family="sans-serif">~500 km</text>
+      </g>
+
+      <!-- MARCADORES DE INCENDIOS -->
+      <g id="markers-group"></g>
+
+    </svg>
+  </div>
+  <div id="smoke-container"></div>
+</div>
+
+<!-- CONTROLES DE ZOOM -->
+<div class="zoom-controls">
+  <button class="zoom-btn" onclick="zoomMap(1.2)" title="Acercar mapa">+</button>
+  <button class="zoom-btn" onclick="zoomMap(0.8)" title="Alejar mapa">−</button>
+</div>
+
+<!-- TIMELINE (SOPORTA SELECCIÓN MÚLTIPLE) -->
+<div class="timeline">
+  <span class="timeline-label">Año</span>
+  <button class="year-btn active" data-val="todos" onclick="toggleFilter('year', 'todos', this)">Todos</button>
+  <button class="year-btn" data-val="2015" onclick="toggleFilter('year', '2015', this)">2015</button>
+  <button class="year-btn" data-val="2017" onclick="toggleFilter('year', '2017', this)">2017</button>
+  <button class="year-btn" data-val="2020" onclick="toggleFilter('year', '2020', this)">2020</button>
+  <button class="year-btn" data-val="2021" onclick="toggleFilter('year', '2021', this)">2021</button>
+  <button class="year-btn" data-val="2022" onclick="toggleFilter('year', '2022', this)">2022</button>
+  <button class="year-btn" data-val="2023" onclick="toggleFilter('year', '2023', this)">2023</button>
+  <button class="year-btn" data-val="2024" onclick="toggleFilter('year', '2024', this)">2024</button>
+  <button class="year-btn" data-val="2025" onclick="toggleFilter('year', '2025', this)">2025</button>
+  <button class="year-btn" data-val="2026" onclick="toggleFilter('year', '2026', this)">2026 🔴</button>
+</div>
+
+<!-- LEYENDA -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot"></div><span>+50.000 ha</span></div>
+  <div class="legend-item"><div class="legend-dot medium"></div><span>10.000–50.000 ha</span></div>
+  <div class="legend-item"><div class="legend-dot small"></div><span>&lt;10.000 ha</span></div>
+</div>
+
+<!-- CONTADOR -->
+<div class="counter">
+  <div class="counter-title">Hectáreas quemadas</div>
+  <div class="counter-number" id="counter-num">0</div>
+  <div class="counter-sub" id="counter-sub">Región Filtrada</div>
+</div>
+
+<!-- TOOLTIP -->
+<div class="tooltip" id="tooltip">
+  <strong id="tooltip-title"></strong>
+  <span id="tooltip-sub"></span>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-year" id="modal-year"></div>
+      <h2 class="modal-title" id="modal-title"></h2>
+      <div class="modal-province" id="modal-province"></div>
+      <button class="modal-close" onclick="closeModalDirect()">✕</button>
+    </div>
+    <div class="modal-stats" id="modal-stats"></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// PROJECTION MATEMÁTICA EXACTA 
+// ═══════════════════════════════════════════════════════════════════
+function proj(lat, lon) {
+  const x = (lon - (-74)) / ((-63) - (-74)) * (620 - 60) + 60;
+  const y = (lat - (-36.5)) / ((-55) - (-36.5)) * (1060 - 40) + 40;
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BASE DE DATOS
+// ═══════════════════════════════════════════════════════════════════
+const fires = [
+  {
+    id:'cholila-2015', name:'Cholila / Lago Puelo 2015', province:'Chubut',
+    year:'2015', category:'chubut', lat:-42.50, lon:-71.45, size:'large', hectareas:'41.000',
+    stats:[{num:'41.000',label:'hectáreas'},{num:'Bosques vírgenes',label:'tipo de área'},{num:'7 semanas',label:'duración'}],
+    causas:'Inicio en el valle del lago Cholila. Factores humanos en varios focos. Sequía extrema y vientos fuertes.',
+    descripcion:'El incendio forestal de mayor magnitud registrado hasta esa fecha: más de 41.000 hectáreas de bosques nativos afectados. Se propagó hacia el PN Lago Puelo y el PN Los Alerces.',
+    testimony:'Los bosques vírgenes ardieron sin que hubiera suficientes medios para combatirlo.',
+    testAuthor:'— Registro periodístico, 2015',
+    tags:['Récord histórico','PN Los Alerces','PN Lago Puelo'],
+    ecosistema:'Bosque andino-patagónico de ciprés, lenga y coihue',
+    fuente:'Altamira, F. (UNLP, 2024)', fuente_url:''
+  },
+  {
+    id:'rionegro-2015', name:'Zona Bariloche 2015', province:'Río Negro',
+    year:'2015', category:'rionegro', lat:-41.15, lon:-71.30, size:'medium', hectareas:'18.000',
+    stats:[{num:'18.000',label:'hectáreas'},{num:'+40°C',label:'temp. máx.'},{num:'6 semanas',label:'activo'}],
+    causas:'Verano con temperatura récord, meses sin precipitaciones y viento Zonda sostenido.',
+    descripcion:'Los incendios en inmediaciones de Bariloche afectaron el bosque húmedo, revelando la vulnerabilidad de ciudades patagónicas ante el fuego de interfaz.',
+    testimony:'El cielo se puso naranja a las dos de la tarde. La ceniza caía sobre la ciudad como nieve sucia.',
+    testAuthor:'— Residente de Bariloche',
+    tags:['Interfaz urbano-rural','Turismo','Calor extremo'],
+    ecosistema:'Bosque húmedo en zona periurbana del Nahuel Huapi',
+    fuente:'Altamira, F. (UNLP/FaHCE, 2024)', fuente_url:''
+  },
+  {
+    id:'lanin-2017', name:'PN Lanín / San Martín de los Andes', province:'Neuquén',
+    year:'2017', category:'neuquen', lat:-40.15, lon:-71.35, size:'medium', hectareas:'9.500',
+    stats:[{num:'9.500',label:'hectáreas'},{num:'72h',label:'horas críticas'},{num:'180',label:'evacuados'}],
+    causas:'Vientos del norte y sequía prolongada.',
+    descripcion:'El PN Lanín alberga araucarias milenarias (pehuén), especie en peligro de extinción. Los incendios amenazaron zonas de altísimo valor cultural y ecológico.',
+    testimony:'La araucaria no es solo un árbol para nosotros. Verla arder es perder parte de nuestra identidad.',
+    testAuthor:'— Referente mapuche de la zona',
+    tags:['PN Lanín','Araucaria en peligro','Pueblo mapuche'],
+    ecosistema:'Bosque de araucaria (pehuén) y lenga',
+    fuente:'Altamira, F. (UNLP/FaHCE, 2024)', fuente_url:''
+  },
+  {
+    id:'junin-2020', name:'Junín de los Andes 2020', province:'Neuquén',
+    year:'2020', category:'neuquen', lat:-39.95, lon:-71.07, size:'medium', hectareas:'12.000',
+    stats:[{num:'12.000',label:'hectáreas'},{num:'8',label:'comunidades afectadas'},{num:'3',label:'focos simultáneos'}],
+    causas:'Múltiples focos simultáneos bajo condiciones de La Niña.',
+    descripcion:'El noroeste neuquino registró múltiples focos en 2020, destruyendo recursos naturales vitales de comunidades mapuche.',
+    testimony:'El newen del bosque estaba llorando. Cuando el fuego lo destruye, nos destruye a nosotros.',
+    testAuthor:'— Lonko de comunidad mapuche',
+    tags:['Pueblo mapuche','Territorio ancestral'],
+    ecosistema:'Bosque de ciprés y estepa de transición',
+    fuente:'Altamira, F. (UNLP/FaHCE)', fuente_url:''
+  },
+  {
+    id:'rionegro-estepa-2020', name:'Estepa de Río Negro 2020', province:'Río Negro',
+    year:'2020', category:'rionegro', lat:-40.80, lon:-67.50, size:'small', hectareas:'44.540',
+    stats:[{num:'44.540',label:'hectáreas'},{num:'Estepa',label:'ecosistema'},{num:'2020',label:'año'}],
+    causas:'Fuego en estepa patagónica oriental.',
+    descripcion:'Río Negro registró 44.540 ha incendiadas en 2020 concentradas en la estepa oriental afectando fauna autóctona.',
+    testimony:'En la estepa el fuego corre más rápido que un caballo.',
+    testAuthor:'— Productor ganadero',
+    tags:['Estepa patagónica','Pastizales'],
+    ecosistema:'Estepa arbustiva patagónica',
+    fuente:'Altamira, F. (UNLP)', fuente_url:''
+  },
+  {
+    id:'comarca-andina-2021', name:'Comarca Andina 2021', province:'Chubut / Río Negro',
+    year:'2021', category:'chubut', lat:-42.07, lon:-71.60, size:'large', hectareas:'30.000',
+    stats:[{num:'30.000',label:'hectáreas'},{num:'+500',label:'viviendas afectadas'},{num:'Miles',label:'evacuados'}],
+    causas:'Altas temperaturas, sequía y vientos fuertes.',
+    descripcion:'Uno de los incendios más catastróficos: arrasó El Bolsón, Lago Puelo, El Hoyo y Epuyén dejando enormes pérdidas en infraestructura y bosque nativo.',
+    testimony:'La magnitud fue devastadora: miles de hectáreas de bosques destruidos en cuestión de horas.',
+    testAuthor:'— Informe Técnico',
+    tags:['El Bolsón','Lago Puelo','Catástrofe histórica'],
+    ecosistema:'Bosques de lenga, ñire y coihue',
+    fuente:'Altamira, F. (UNLP)', fuente_url:''
+  },
+  {
+    id:'alerces-2022', name:'PN Los Alerces 2022', province:'Chubut',
+    year:'2022', category:'chubut', lat:-42.87, lon:-71.80, size:'medium', hectareas:'8.500',
+    stats:[{num:'8.500',label:'hectáreas'},{num:'+3.000',label:'años del alerce'},{num:'UNESCO',label:'Patrimonio'}],
+    causas:'Sequía multianual acumulada.',
+    descripcion:'El PN Los Alerces (Patrimonio UNESCO) bajo severa amenaza. Los alerces milenarios, algunos con más de 3000 años, estuvieron en riesgo crítico.',
+    testimony:'Estos árboles tienen más de dos mil años. No podemos dejar que el fuego los alcance.',
+    testAuthor:'— Guarda-parque PN Los Alerces',
+    tags:['Patrimonio UNESCO','Alerce milenario'],
+    ecosistema:'Bosque de alerce milenario',
+    fuente:'Altamira (2024)', fuente_url:''
+  },
+  {
+    id:'chubut-2023', name:'Zonas Protegidas de Chubut 2023', province:'Chubut',
+    year:'2023', category:'chubut', lat:-44.50, lon:-70.50, size:'medium', hectareas:'60.000',
+    stats:[{num:'+60.000',label:'ha protegidas'},{num:'CONAE',label:'satélite'},{num:'2023',label:'año crítico'}],
+    causas:'Baja humedad ambiental estructural.',
+    descripcion:'Según la CONAE, solo en 2023 los siniestros impactaron más de 60.000 ha de zonas protegidas en el centro-oeste de Chubut.',
+    testimony:'Las condiciones críticas de sequedad y altas temperaturas aumentarían la probabilidad de focos.',
+    testAuthor:'— Informe CONAE',
+    tags:['Zonas protegidas','Sequía estructural'],
+    ecosistema:'Estepa y bosque andino-patagónico',
+    fuente:'Altamira, F. (UNLP)', fuente_url:''
+  },
+  {
+    id:'el-chalten-2023', name:'El Chaltén / PN Los Glaciares 2023', province:'Santa Cruz',
+    year:'2023', category:'santacruz', lat:-49.33, lon:-72.88, size:'small', hectareas:'580',
+    stats:[{num:'580',label:'hectáreas'},{num:'PN Glaciares',label:'área'},{num:'Rápida',label:'contención'}],
+    causas:'Foco originado por negligencia en zona de acampe libre. Condiciones de sequía atípica en la región austral.',
+    descripcion:'A pesar de ser una zona más fría, el calentamiento global elevó los días de riesgo extremo de incendios en el Parque Nacional Los Glaciares (Santa Cruz).',
+    testimony:'Logramos contener el fuego antes de que alcanzara el bosque primario de lengas.',
+    testAuthor:'— Brigadista APN, El Chaltén',
+    tags:['Santa Cruz','PN Los Glaciares'],
+    ecosistema:'Bosque andino-patagónico sur (Lenga y Ñire)',
+    fuente:'Registro APN 2023', fuente_url:''
+  },
+  {
+    id:'neuquen-2024', name:'Neuquén — Temporada 2024/25', province:'Neuquén',
+    year:'2024', category:'neuquen', lat:-39.00, lon:-70.90, size:'large', hectareas:'11.782',
+    stats:[{num:'11.782',label:'hectáreas Neuquén'},{num:'×4',label:'vs temp. previa'},{num:'400',label:'brigadistas'}],
+    causas:'Ola de calor, déficit hídrico acumulado y viento Zonda.',
+    descripcion:'Catalogada como la peor temporada en décadas por Greenpeace. Afectó masivamente cuencas del norte neuquino.',
+    testimony:'Pedimos refuerzos hace días. Cuando llegaron, el fuego ya había cruzado el río.',
+    testAuthor:'— Jefe de brigada',
+    tags:['Greenpeace','Catástrofe regional'],
+    ecosistema:'Bosque andino-patagónico',
+    fuente:'Greenpeace Argentina', fuente_url:''
+  },
+  {
+    id:'rionegro-2024', name:'Río Negro — Temporada 2024/25', province:'Río Negro',
+    year:'2024', category:'rionegro', lat:-41.10, lon:-71.20, size:'large', hectareas:'10.218',
+    stats:[{num:'10.218',label:'hectáreas'},{num:'31.722',label:'ha región'},{num:'×4',label:'vs temporada'}],
+    causas:'Condiciones de sequía sin precedentes en la interfaz urbano-forestal.',
+    descripcion:'Zonas de Bariloche, Villa Mascardi y El Bolsón sufrieron incendios descontrolados que arrasaron con la vegetación.',
+    testimony:'Llevamos años pidiendo más brigadistas y presupuesto.',
+    testAuthor:'— Brigadista voluntaria',
+    tags:['Villa Mascardi','Bariloche'],
+    ecosistema:'Bosque de lenga y coihue',
+    fuente:'Greenpeace Argentina', fuente_url:''
+  },
+  {
+    id:'chubut-2024', name:'Esquel / PN Los Alerces 2024', province:'Chubut',
+    year:'2024', category:'chubut', lat:-42.90, lon:-71.32, size:'large', hectareas:'9.722',
+    stats:[{num:'6.924',label:'ha protegidas'},{num:'3.200',label:'ha pastizales'},{num:'42%',label:'turismo perdido'}],
+    causas:'Sequía acumulada e histórica.',
+    descripcion:'Afectó gravemente áreas protegidas y pastizales. El 72% de los habitantes locales experimentó profundo estrés postraumático.',
+    testimony:'El incendio amenazó la supervivencia de especies y la estructura socioeconómica.',
+    testAuthor:'— Altamira, F. (2024)',
+    tags:['PN Los Alerces','Impacto social'],
+    ecosistema:'Bosque de alerce milenario',
+    fuente:'Altamira, F. (UNLP)', fuente_url:''
+  },
+  {
+    id:'neuquen-2025', name:'San Martín de los Andes 2025', province:'Neuquén',
+    year:'2025', category:'neuquen', lat:-40.10, lon:-71.35, size:'large', hectareas:'41.000',
+    stats:[{num:'41.000',label:'hectáreas'},{num:'+44°C',label:'temp. récord'},{num:'2.000',label:'evacuados'}],
+    causas:'Tercer año consecutivo de déficit hídrico severo.',
+    descripcion:'El SNMF declaró catástrofe nacional. Los incendios superaron todos los registros en el bosque primario andino.',
+    testimony:'Esto ya no es un evento extraordinario. Es el nuevo normal.',
+    testAuthor:'— Director SNMF',
+    tags:['Catástrofe nacional'],
+    ecosistema:'Bosque primario de coihue y lenga',
+    fuente:'SNMF / Greenpeace Argentina', fuente_url:''
+  },
+  {
+    id:'comarca-2026', name:'Comarca Andina 2026', province:'Chubut',
+    year:'2026', category:'chubut', lat:-42.30, lon:-71.65, size:'large', hectareas:'45.000',
+    stats:[{num:'45.000+',label:'ha quemadas'},{num:'3.000',label:'desplazados'},{num:'Emerg.',label:'nacional'}],
+    causas:'Calor extremo +38°C. El pino radiata invasor agravó drásticamente la propagación.',
+    descripcion:'El reporte WWA dictaminó que estas condiciones fueron 2,5 veces más probables por el calentamiento global.',
+    testimony:'Severos incendios forestales arrasaron los piedemontes andinos.',
+    testAuthor:'— World Weather Attribution',
+    tags:['Emergencia 2026','WWA 2.5x'],
+    ecosistema:'Bosque nativo y pino radiata invasor',
+    fuente:'WWA', fuente_url:''
+  },
+  {
+    id:'alerces-2026', name:'PN Los Alerces — En llamas 2026', province:'Chubut',
+    year:'2026', category:'chubut', lat:-42.87, lon:-71.85, size:'large', hectareas:'77.000',
+    stats:[{num:'+77.000',label:'ha en la región'},{num:'3.000',label:'años alerce'},{num:'UNESCO',label:'en peligro'}],
+    causas:'Incendios que lograron penetrar directamente en las áreas más sensibles del parque.',
+    descripcion:'Greenpeace informó una pérdida total de +77.000 hectáreas en el verano patagónico, dejando al huemul y pudú sin hábitat crítico.',
+    testimony:'Los incendios continúan devastando los bosques más antiguos.',
+    testAuthor:'— Reporte Al Jazeera',
+    tags:['Los Alerces UNESCO','Huemul'],
+    ecosistema:'Bosque de alerce (Patrimonio Humanidad)',
+    fuente:'Greenpeace Argentina', fuente_url:''
+  }
+];
+
+// ═══════════════════════════════════════════════════════════════
+// FILTROS SIMULTÁNEOS
+// ═══════════════════════════════════════════════════════════════
+let activeYears = new Set(['todos']);
+let activeFilters = new Set(['todos']);
+
+const SIZES = { large:20, medium:14, small:9 };
+
+function toggleFilter(type, val, btn) {
+  const activeSet = type === 'year' ? activeYears : activeFilters;
+  
+  if (val === 'todos') {
+    activeSet.clear();
+    activeSet.add('todos');
+  } else {
+    activeSet.delete('todos');
+    if (activeSet.has(val)) {
+      activeSet.delete(val);
+    } else {
+      activeSet.add(val);
+    }
+    if (activeSet.size === 0) activeSet.add('todos');
+  }
+
+  const selector = type === 'year' ? '.year-btn' : '.filter-btn';
+  document.querySelectorAll(selector).forEach(b => {
+    if (activeSet.has(b.getAttribute('data-val'))) {
+      b.classList.add('active');
+    } else {
+      b.classList.remove('active');
+    }
+  });
+
+  renderMarkers();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDERIZADO DE MARCADORES (Con Letra Más Grande)
+// ═══════════════════════════════════════════════════════════════
+function renderMarkers() {
+  const g = document.getElementById('markers-group');
+  g.innerHTML = '';
+
+  const filtered = fires.filter(f => {
+    const matchYear = activeYears.has('todos') || activeYears.has(f.year);
+    
+    let matchCat = activeFilters.has('todos');
+    if (!matchCat) {
+      matchCat = activeFilters.has(f.category);
+      if (activeFilters.has('comunidades') && 
+          f.tags.some(t => t.toLowerCase().includes('mapuche') || 
+                           t.toLowerCase().includes('comunidad') || 
+                           t.toLowerCase().includes('lof'))) {
+        matchCat = true;
+      }
+    }
+
+    return matchYear && matchCat;
+  });
+
+  filtered.forEach(fire => {
+    const {x, y} = proj(fire.lat, fire.lon);
+    const r  = SIZES[fire.size] || 12;
+    const rp = r * 1.8;
+
+    const ns = 'http://www.w3.org/2000/svg';
+
+    const grp = document.createElementNS(ns, 'g');
+    grp.setAttribute('class', 'marker-dot');
+    grp.style.cursor = 'pointer';
+
+    const ring = document.createElementNS(ns, 'circle');
+    ring.setAttribute('cx', x); ring.setAttribute('cy', y);
+    ring.setAttribute('r', rp);
+    ring.setAttribute('fill', 'rgba(232,67,10,0.18)');
+    ring.setAttribute('class', 'pulse-ring');
+    ring.style.animationDelay = (Math.random() * 1.5) + 's';
+    grp.appendChild(ring);
+
+    const glow = document.createElementNS(ns, 'circle');
+    glow.setAttribute('cx', x); glow.setAttribute('cy', y);
+    glow.setAttribute('r', r + 6);
+    glow.setAttribute('fill', 'rgba(232,67,10,0.12)');
+    grp.appendChild(glow);
+
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    dot.setAttribute('r', r);
+    const grad = fire.size === 'large' ? '#FF8C42' :
+                 fire.size === 'medium'? '#E8430A' : '#cc6600';
+    dot.setAttribute('fill', grad);
+    dot.setAttribute('filter', 'url(#provglow)');
+    grp.appendChild(dot);
+
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', x);
+    lbl.setAttribute('y', y - r - 7);
+    lbl.setAttribute('text-anchor', 'middle');
+    lbl.setAttribute('font-size', '12'); // Letra aumentada de 9 a 12
+    lbl.setAttribute('font-weight', '600');
+    lbl.setAttribute('fill', '#FF8C42');
+    lbl.setAttribute('font-family', "'Source Sans 3', sans-serif");
+    lbl.textContent = fire.name.split('\n')[0];
+    lbl.style.pointerEvents = 'none';
+    lbl.style.textShadow = '0 1px 3px rgba(0,0,0,0.9)';
+    grp.appendChild(lbl);
+
+    grp.addEventListener('mouseenter', (e) => showTooltip(e, fire));
+    grp.addEventListener('mouseleave', hideTooltip);
+    grp.addEventListener('click', () => openModal(fire));
+
+    g.appendChild(grp);
+  });
+
+  const total = filtered.reduce((s, f) => {
+    const n = parseInt(f.hectareas.replace(/\./g,'').replace(',','').replace('+',''));
+    return s + (isNaN(n) ? 0 : n);
+  }, 0);
+  document.getElementById('counter-num').textContent = total.toLocaleString('es-AR') + (total > 0 ? '+' : '');
+  
+  let subText = 'Patagonia · ';
+  if (activeYears.has('todos')) subText += 'Histórico 2015-2026';
+  else subText += 'Años: ' + Array.from(activeYears).join(', ');
+  document.getElementById('counter-sub').textContent = subText;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TOOLTIP Y MODAL
+// ═══════════════════════════════════════════════════════════════
+function showTooltip(e, fire) {
+  document.getElementById('tooltip-title').textContent = fire.name.split('\n')[0];
+  document.getElementById('tooltip-sub').textContent   =
+    `${fire.province} · ${fire.year} · ${fire.hectareas} ha`;
+  document.getElementById('tooltip').classList.add('show');
+}
+document.addEventListener('mousemove', e => {
+  const t = document.getElementById('tooltip');
+  if (t.classList.contains('show')) {
+    t.style.left = (e.clientX + 14) + 'px';
+    t.style.top  = (e.clientY - 44) + 'px';
+  }
+});
+function hideTooltip() { document.getElementById('tooltip').classList.remove('show'); }
+
+function openModal(fire) {
+  hideTooltip();
+  document.getElementById('modal-year').textContent     = `📅 ${fire.year}`;
+  document.getElementById('modal-title').textContent    = fire.name.replace('\n', ' — ');
+  document.getElementById('modal-province').textContent = `📍 ${fire.province} · ${fire.hectareas} hectáreas`;
+
+  document.getElementById('modal-stats').innerHTML = fire.stats.map(s =>
+    `<div class="stat"><span class="stat-number">${s.num}</span><span class="stat-label">${s.label}</span></div>`
+  ).join('');
+
+  const fuenteHTML = fire.fuente_url
+    ? `<div class="source-box"><p>📚 <strong>Fuente:</strong> ${fire.fuente}</p><a href="${fire.fuente_url}" target="_blank">→ Ver fuente original</a></div>`
+    : `<div class="source-box"><p>📚 ${fire.fuente}</p></div>`;
+
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-section">
+      <div class="modal-section-title">🌳 Ecosistema afectado</div>
+      <p class="modal-text">${fire.ecosistema}</p>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">📋 ¿Qué pasó?</div>
+      <p class="modal-text">${fire.descripcion}</p>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">⚡ Causas</div>
+      <p class="modal-text">${fire.causas}</p>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">💬 Fuente directa</div>
+      <div class="testimony">"${fire.testimony}"<cite>${fire.testAuthor}</cite></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">🏷️ Temáticas</div>
+      <div class="tags">${fire.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+    </div>
+    ${fuenteHTML}`;
+
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal(e) {
+  if (e.target === document.getElementById('modal-overlay'))
+    document.getElementById('modal-overlay').classList.remove('open');
+}
+function closeModalDirect() { document.getElementById('modal-overlay').classList.remove('open'); }
+
+// ═══════════════════════════════════════════════════════════════
+// ZOOM, PAN Y DRAG (Control interactivo del SVG)
+// ═══════════════════════════════════════════════════════════════
+const container = document.getElementById('map-svg-container');
+const svgEl = document.getElementById('main-svg');
+let dragging = false, startX = 0, startY = 0, offsetX = 0, offsetY = 0;
+let currentScale = 1;
+
+function updateTransform() {
+  container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${currentScale})`;
+}
+
+// Botones de Zoom interactivos
+window.zoomMap = function(factor) {
+  currentScale *= factor;
+  currentScale = Math.max(0.4, Math.min(currentScale, 4)); // Limita el nivel de acercamiento/alejamiento
+  updateTransform();
+};
+
+function centerMap() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const rect = svgEl.getBoundingClientRect();
+  
+  offsetX = (vw - rect.width / currentScale) / 2;
+  offsetY = (vh - rect.height / currentScale) / 2 + 35; 
+  updateTransform();
+}
+
+// Zoom con la Ruedita del Mouse (o Touchpad)
+document.getElementById('map-wrapper').addEventListener('wheel', e => {
+  e.preventDefault();
+  const zoomSensitivity = 0.0015;
+  const delta = e.deltaY * -zoomSensitivity;
+  let newScale = currentScale * (1 + delta);
+  newScale = Math.max(0.4, Math.min(newScale, 4));
+  currentScale = newScale;
+  updateTransform();
+}, { passive: false });
+
+centerMap();
+window.addEventListener('resize', centerMap);
+
+container.addEventListener('mousedown', e => {
+  dragging = true;
+  startX = e.clientX - offsetX;
+  startY = e.clientY - offsetY;
+  container.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  offsetX = e.clientX - startX;
+  offsetY = e.clientY - startY;
+  updateTransform();
+});
+window.addEventListener('mouseup', () => {
+  dragging = false;
+  container.style.cursor = 'grab';
+});
+container.addEventListener('touchstart', e => {
+  if(e.touches.length === 1) {
+    dragging = true; 
+    startX = e.touches[0].clientX - offsetX; 
+    startY = e.touches[0].clientY - offsetY;
+  }
+});
+window.addEventListener('touchmove', e => {
+  if (!dragging || e.touches.length !== 1) return;
+  offsetX = e.touches[0].clientX - startX; 
+  offsetY = e.touches[0].clientY - startY;
+  updateTransform();
+});
+window.addEventListener('touchend', () => { dragging = false; });
+
+// ═══════════════════════════════════════════════════════════════
+// SMOKE PARTICLES
+// ═══════════════════════════════════════════════════════════════
+function createSmoke() {
+  const wrapper = document.getElementById('map-wrapper');
+  for (let i = 0; i < 8; i++) {
+    const s = document.createElement('div');
+    s.className = 'smoke-particle';
+    const sz = 60 + Math.random()*120;
+    s.style.cssText = `
+      width:${sz}px;height:${sz}px;
+      left:${20+Math.random()*60}%;
+      bottom:${20+Math.random()*30}%;
+      animation-duration:${8+Math.random()*12}s;
+      animation-delay:${Math.random()*-10}s;
+      pointer-events:none;position:absolute;
+    `;
+    wrapper.appendChild(s);
+  }
+}
+
+createSmoke();
+renderMarkers();
+</script>
+</body>
+</html>
